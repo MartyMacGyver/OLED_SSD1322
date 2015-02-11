@@ -22,23 +22,31 @@ Annotated and updated by Martin Falatic
 //##########################################################################
 //--------------------------------------------------------------------------
 
+#include <SPI.h>
+
 #define MODE_3WIRE    1   // BS1=0, BS0 = 1
 #define MODE_4WIRE    2   // BS1=0, BS0 = 0, needs the RS (D/C) signal
+#define MODE_SPI4W    3   // BS1=0, BS0 = 0, needs the RS (D/C) signal
+
 #define SEND_CMD      1   // 3- and 4-wire - Display instruction (command)
 #define SEND_DAT      2   // 3- and 4-wire - Display instruction (data)
+
 #define MAXROWS      64   // Still figuring these out...
 #define MAXCOLS     240   // Still figuring these out...
 
 // Pin mappings for Mega2560
-#define PIN_SCLK  30   // SCLK signal
-#define PIN_SDIN  31   // SDIN signal
-#define PIN_RS    32   // RS (D/C) signal (can be tied low for 3-wire SPI)
-#define PIN_RW    33   // /WR (R/W) signal (can be tied low)
-#define PIN_E     34   // /RD (E) signal (can be tied low)
-#define PIN_RES   35   // /RES signal
-#define PIN_CS    36   // /CS signal
+#define PIN_SCLK  30  // SCLK signal (SPI uses SCK  on pin 52)
+#define PIN_SDIN  31  // SDIN signal (SPI uses MOSI on pin 51)
+#define PIN_RS    32  // RS (D/C) signal (can be tied low for 3-wire SPI)
+#define PIN_CS    33  // /CS signal (certain SPI can use pin 53)
+                      // (can be tied low with a single display)
+#define PIN_RES   34  // /RES signal
+#define PIN_RW    35  // /WR (R/W) signal (can be tied low)
+#define PIN_E     36  // /RD (E) signal (can be tied low)
 
-int SIG_MODE = MODE_3WIRE;  // or MODE_4WIRE
+int SIG_MODE = MODE_4WIRE;
+//int SIG_MODE = MODE_3WIRE;
+//int SIG_MODE = MODE_SPI4W;
 
 //--------------------------------------------------------------------------
 //##########################################################################
@@ -95,7 +103,7 @@ void displaySend(uint8_t sendType, unsigned char v)
 
   if (sendType == SEND_CMD)
   { // Send a command value
-    if (SIG_MODE == MODE_4WIRE)
+    if (SIG_MODE == MODE_4WIRE || SIG_MODE == MODE_SPI4W)
     {
       digitalPinSetVal(&IOMAP_RS, LOW);
     }
@@ -108,7 +116,7 @@ void displaySend(uint8_t sendType, unsigned char v)
   }
   else if (sendType == SEND_DAT)
   { // Send a data value
-    if (SIG_MODE == MODE_4WIRE)
+    if (SIG_MODE == MODE_4WIRE || SIG_MODE == MODE_SPI4W)
     {
       digitalPinSetVal(&IOMAP_RS, HIGH);
     }
@@ -120,19 +128,25 @@ void displaySend(uint8_t sendType, unsigned char v)
     }
   }
 
-  for(i=8;i>0;i--)
-  { // Decrementing is faster
-    digitalPinSetVal(&IOMAP_SCLK, LOW);
-    if((v&0x80)>>7==1)
-    {
-      digitalPinSetVal(&IOMAP_SDIN, HIGH);
+  if (SIG_MODE == MODE_3WIRE || SIG_MODE == MODE_4WIRE)
+  {
+    for(i=8;i>0;i--)
+    { // Decrementing is faster
+      digitalPinSetVal(&IOMAP_SCLK, LOW);
+      if((v&0x80)>>7==1)
+      {
+        digitalPinSetVal(&IOMAP_SDIN, HIGH);
+      }
+      else
+      {
+        digitalPinSetVal(&IOMAP_SDIN, LOW);
+      }
+      v=v<<1;
+      digitalPinSetVal(&IOMAP_SCLK, HIGH);
     }
-    else
-    {
-      digitalPinSetVal(&IOMAP_SDIN, LOW);
-    }
-    v=v<<1;
-    digitalPinSetVal(&IOMAP_SCLK, HIGH);
+  }
+  else if (SIG_MODE == MODE_SPI4W) {
+    SPI.transfer(v);
   }
 
   digitalPinSetVal(&IOMAP_CS, HIGH);
@@ -338,6 +352,12 @@ void setup()
   digitalPinSetVal(&IOMAP_E,   LOW);
   digitalPinSetVal(&IOMAP_RES, HIGH);
   delay(1000);
+  if (SIG_MODE == MODE_SPI4W) {
+    SPI.begin();
+    SPI.setBitOrder(MSBFIRST);
+    SPI.setClockDivider(SPI_CLOCK_DIV2);
+    // DIV4 is almost as fast (for a 16 MHz device)
+  }
   Reset_Device();
 }
 
