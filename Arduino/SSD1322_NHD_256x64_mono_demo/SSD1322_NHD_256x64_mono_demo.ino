@@ -1,9 +1,7 @@
 //--------------------------------------------------------------------------
 /*
-NHD_2_8_25664_mega.ino
 Program for writing to Newhaven Display 256x64 graphic OLED with SSD1322 controller (serial mode)
-(c)2014 Mike LaVine - Newhaven Display International, LLC. 
-
+Original demo (c)2014 Mike LaVine - Newhaven Display International, LLC. 
 Origin: http://www.newhavendisplay.com/NHD_forum/index.php/topic,64.0.html
 
 Annotated and updated by Martin Falatic
@@ -153,7 +151,7 @@ void displaySend(uint8_t sendType, unsigned char v)
 }
 
 //--------------------------------------------------------------------------
-void Set_Column_Address_25664(unsigned char a, unsigned char b)
+void Set_Column_Address(unsigned char a, unsigned char b)
 {
   displaySend(SEND_CMD, 0x15); // Set Column Address
   displaySend(SEND_DAT, a);    //   Default => 0x00
@@ -161,7 +159,7 @@ void Set_Column_Address_25664(unsigned char a, unsigned char b)
 }
 
 //--------------------------------------------------------------------------
-void Set_Row_Address_25664(unsigned char a, unsigned char b)
+void Set_Row_Address(unsigned char a, unsigned char b)
 {
   displaySend(SEND_CMD, 0x75); // Set Row Address
   displaySend(SEND_DAT, a);    //   Default => 0x00
@@ -169,7 +167,7 @@ void Set_Row_Address_25664(unsigned char a, unsigned char b)
 }
 
 //--------------------------------------------------------------------------
-void Set_Write_RAM_25664()
+void Set_Write_RAM()
 {
   displaySend(SEND_CMD, 0x5C); // Enable MCU to Write into RAM
 }
@@ -248,9 +246,9 @@ void ClearDisplay()
   // Turn off display while clearing (also hides noise at powerup)
   displaySend(SEND_CMD, 0xA4); // Set Display Mode = OFF
 
-  Set_Column_Address_25664(0x00,0x77);
-  Set_Row_Address_25664(0x00,0x7F);
-  Set_Write_RAM_25664();
+  Set_Column_Address(0x00,0x77);
+  Set_Row_Address(0x00,0x7F);
+  Set_Write_RAM();
 
   for(i=0;i<MAXROWS;i++)
   {
@@ -274,9 +272,9 @@ void FillDisplay()
 {
   unsigned int i, j;
   
-  Set_Column_Address_25664(0x00,0x77);
-  Set_Row_Address_25664(0x00,0x7F);
-  Set_Write_RAM_25664();
+  Set_Column_Address(0x00,0x77);
+  Set_Row_Address(0x00,0x7F);
+  Set_Write_RAM();
 
   for(i=0;i<MAXROWS;i++)
   {
@@ -298,9 +296,9 @@ void CheckerboardOdd()
 {
   unsigned int i, j;
   
-  Set_Column_Address_25664(0x00,0x77);
-  Set_Row_Address_25664(0x00,0x7F);
-  Set_Write_RAM_25664();
+  Set_Column_Address(0x00,0x77);
+  Set_Row_Address(0x00,0x7F);
+  Set_Write_RAM();
 
   for(i=0;i<MAXROWS;i++)
   {
@@ -322,9 +320,9 @@ void CheckerboardEven()
 {
   unsigned int i, j;
   
-  Set_Column_Address_25664(0x00,0x77);
-  Set_Row_Address_25664(0x00,0x7F);
-  Set_Write_RAM_25664();
+  Set_Column_Address(0x00,0x77);
+  Set_Row_Address(0x00,0x7F);
+  Set_Write_RAM();
 
   for(i=0;i<MAXROWS;i++)
   {
