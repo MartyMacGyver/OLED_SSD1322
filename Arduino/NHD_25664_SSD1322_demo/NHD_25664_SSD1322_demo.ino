@@ -4,7 +4,7 @@ NHD_2_8_25664_mega.ino
 Program for writing to Newhaven Display 256x64 graphic OLED with SSD1322 controller (serial mode)
 (c)2014 Mike LaVine - Newhaven Display International, LLC. 
 
-Originally version at: http://www.newhavendisplay.com/NHD_forum/index.php/topic,64.0.html
+Origin: http://www.newhavendisplay.com/NHD_forum/index.php/topic,64.0.html
 
 Annotated and updated by Martin Falatic
 
@@ -23,7 +23,7 @@ Annotated and updated by Martin Falatic
 //--------------------------------------------------------------------------
 
 #define MODE_3WIRE    1   // BS1=0, BS0 = 1
-#define MODE_4WIRE    2   // BS1=0, BS0 = 0
+#define MODE_4WIRE    2   // BS1=0, BS0 = 0, needs the RS (D/C) signal
 #define SEND_CMD      1   // 3- and 4-wire - Display instruction (command)
 #define SEND_DAT      2   // 3- and 4-wire - Display instruction (data)
 #define MAXROWS      64   // Still figuring these out...
@@ -38,16 +38,19 @@ Annotated and updated by Martin Falatic
 #define PIN_RES   35   // /RES signal
 #define PIN_CS    36   // /CS signal
 
-int SIG_MODE = MODE_3WIRE;
+int SIG_MODE = MODE_3WIRE;  // or MODE_4WIRE
 
 //--------------------------------------------------------------------------
 //##########################################################################
 //--------------------------------------------------------------------------
 
-#define digitalPinSetFast(IOPTR, VAL) ( (VAL == LOW) ? \
+// This is slow. Really slow. (At 16 MHz anyway)
+//#define digitalPinSetVal(IOPTR, VAL) ( digitalWrite((IOPTR)->pin, VAL) )
+
+// Much more efficient!
+#define digitalPinSetVal(IOPTR, VAL) ( (VAL == LOW) ? \
                                         (*(IOPTR)->reg &= ~(IOPTR)->mask) : \
                                         (*(IOPTR)->reg |=  (IOPTR)->mask) )
-//#define digitalPinSetSlow(IOPTR, VAL) ( digitalWrite((IOPTR)->pin, VAL) )
 
 struct IOMAP_Struct
 {
@@ -88,73 +91,73 @@ void displaySend(uint8_t sendType, unsigned char v)
 {
   unsigned char i;
 
-  digitalPinSetFast(&IOMAP_CS, LOW);
+  digitalPinSetVal(&IOMAP_CS, LOW);
 
   if (sendType == SEND_CMD)
   { // Send a command value
     if (SIG_MODE == MODE_4WIRE)
     {
-      digitalPinSetFast(&IOMAP_RS, LOW);
+      digitalPinSetVal(&IOMAP_RS, LOW);
     }
     else if (SIG_MODE == MODE_3WIRE)
     {
-      digitalPinSetFast(&IOMAP_SDIN, LOW);
-      digitalPinSetFast(&IOMAP_SCLK, LOW);
-      digitalPinSetFast(&IOMAP_SCLK, HIGH);
+      digitalPinSetVal(&IOMAP_SDIN, LOW);
+      digitalPinSetVal(&IOMAP_SCLK, LOW);
+      digitalPinSetVal(&IOMAP_SCLK, HIGH);
     }
   }
   else if (sendType == SEND_DAT)
   { // Send a data value
     if (SIG_MODE == MODE_4WIRE)
     {
-      digitalPinSetFast(&IOMAP_RS, HIGH);
+      digitalPinSetVal(&IOMAP_RS, HIGH);
     }
     else if (SIG_MODE == MODE_3WIRE)
     {
-      digitalPinSetFast(&IOMAP_SDIN, HIGH);
-      digitalPinSetFast(&IOMAP_SCLK, LOW);
-      digitalPinSetFast(&IOMAP_SCLK, HIGH);
+      digitalPinSetVal(&IOMAP_SDIN, HIGH);
+      digitalPinSetVal(&IOMAP_SCLK, LOW);
+      digitalPinSetVal(&IOMAP_SCLK, HIGH);
     }
   }
 
   for(i=8;i>0;i--)
   { // Decrementing is faster
-    digitalPinSetFast(&IOMAP_SCLK, LOW);
+    digitalPinSetVal(&IOMAP_SCLK, LOW);
     if((v&0x80)>>7==1)
     {
-      digitalPinSetFast(&IOMAP_SDIN, HIGH);
+      digitalPinSetVal(&IOMAP_SDIN, HIGH);
     }
     else
     {
-      digitalPinSetFast(&IOMAP_SDIN, LOW);
+      digitalPinSetVal(&IOMAP_SDIN, LOW);
     }
     v=v<<1;
-    digitalPinSetFast(&IOMAP_SCLK, HIGH);
+    digitalPinSetVal(&IOMAP_SCLK, HIGH);
   }
 
-  digitalPinSetFast(&IOMAP_CS, HIGH);
+  digitalPinSetVal(&IOMAP_CS, HIGH);
 }
 
 //--------------------------------------------------------------------------
 void Set_Column_Address_25664(unsigned char a, unsigned char b)
 {
-  displaySend(SEND_CMD, 0x15);     // Set Column Address
-  displaySend(SEND_DAT, a);        //   Default => 0x00
-  displaySend(SEND_DAT, b);        //   Default => 0x77
+  displaySend(SEND_CMD, 0x15); // Set Column Address
+  displaySend(SEND_DAT, a);    //   Default => 0x00
+  displaySend(SEND_DAT, b);    //   Default => 0x77
 }
 
 //--------------------------------------------------------------------------
 void Set_Row_Address_25664(unsigned char a, unsigned char b)
 {
-  displaySend(SEND_CMD, 0x75);     // Set Row Address
-  displaySend(SEND_DAT, a);        //   Default => 0x00
-  displaySend(SEND_DAT, b);        //   Default => 0x7F
+  displaySend(SEND_CMD, 0x75); // Set Row Address
+  displaySend(SEND_DAT, a);    //   Default => 0x00
+  displaySend(SEND_DAT, b);    //   Default => 0x7F
 }
 
 //--------------------------------------------------------------------------
 void Set_Write_RAM_25664()
 {
-  displaySend(SEND_CMD, 0x5C);     // Enable MCU to Write into RAM
+  displaySend(SEND_CMD, 0x5C); // Enable MCU to Write into RAM
 }
 
 //--------------------------------------------------------------------------
@@ -330,10 +333,10 @@ void CheckerboardEven()
 void setup()
 {
   InitStructsAndPins();
-  digitalPinSetFast(&IOMAP_RS,  LOW);
-  digitalPinSetFast(&IOMAP_RW,  LOW);
-  digitalPinSetFast(&IOMAP_E,   LOW);
-  digitalPinSetFast(&IOMAP_RES, HIGH);
+  digitalPinSetVal(&IOMAP_RS,  LOW);
+  digitalPinSetVal(&IOMAP_RW,  LOW);
+  digitalPinSetVal(&IOMAP_E,   LOW);
+  digitalPinSetVal(&IOMAP_RES, HIGH);
   delay(1000);
   Reset_Device();
 }
