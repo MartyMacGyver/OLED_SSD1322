@@ -1,185 +1,353 @@
-//---------------------------------------------------------
+//--------------------------------------------------------------------------
 /*
 NHD_2_8_25664_mega.ino
 Program for writing to Newhaven Display 256x64 graphic OLED with SSD1322 controller (serial mode)
-
 (c)2014 Mike LaVine - Newhaven Display International, LLC. 
 
-        This program is free software; you can redistribute it and/or modify
-        it under the terms of the GNU General Public License as published by
-        the Free Software Foundation; either version 2 of the License, or
-        (at your option) any later version.
+Originally version at: http://www.newhavendisplay.com/NHD_forum/index.php/topic,64.0.html
 
-        This program is distributed in the hope that it will be useful,
-        but WITHOUT ANY WARRANTY; without even the implied warranty of
-        MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-        GNU General Public License for more details.
+Annotated and updated by Martin Falatic
+
+    This program is free software; you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation; either version 2 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
 */
-//---------------------------------------------------------
+//--------------------------------------------------------------------------
+//##########################################################################
+//--------------------------------------------------------------------------
 
+#define MODE_3WIRE    1   // BS1=0, BS0 = 1
+#define MODE_4WIRE    2   // BS1=0, BS0 = 0
+#define SEND_CMD      1   // 3- and 4-wire - Display instruction (command)
+#define SEND_DAT      2   // 3- and 4-wire - Display instruction (data)
+#define MAXROWS      64   // Still figuring these out...
+#define MAXCOLS     240   // Still figuring these out...
 
-int RS = 30;      // RS (D/C) signal connected to Arduino digital pin 30 (can be tied low for 3-wire SPI)
-int RW = 31;      // /WR (R/W) signal connected to Arduino digital pin 31 (can be tied low)
-int E = 32;      // /RD (E) signal connected to Arduino digital pin 32  (can be tied low)
-int RES = 33;     // /RES signal connected to Arduino digital pin 33  
-int CS = 34;     // /CS signal conencted to Arduino digital pin 34
-int SCLK = 22;   // SCLK signal connected to Arduino digital pin 22
-int SDIN = 23;   // SDIN signal connected to Arduino digital pin 23
+// Pin mappings for Mega2560
+#define PIN_SCLK  30   // SCLK signal
+#define PIN_SDIN  31   // SDIN signal
+#define PIN_RS    32   // RS (D/C) signal (can be tied low for 3-wire SPI)
+#define PIN_RW    33   // /WR (R/W) signal (can be tied low)
+#define PIN_E     34   // /RD (E) signal (can be tied low)
+#define PIN_RES   35   // /RES signal
+#define PIN_CS    36   // /CS signal
 
-void comm_out(unsigned char c)
+int SIG_MODE = MODE_3WIRE;
+
+//--------------------------------------------------------------------------
+//##########################################################################
+//--------------------------------------------------------------------------
+
+#define digitalPinSetFast(IOPTR, VAL) ( (VAL == LOW) ? \
+                                        (*(IOPTR)->reg &= ~(IOPTR)->mask) : \
+                                        (*(IOPTR)->reg |=  (IOPTR)->mask) )
+//#define digitalPinSetSlow(IOPTR, VAL) ( digitalWrite((IOPTR)->pin, VAL) )
+
+struct IOMAP_Struct
+{
+  uint8_t pin;
+  volatile uint8_t * reg;
+  uint8_t mask;
+} IOMAP_SCLK, IOMAP_SDIN, IOMAP_RS, IOMAP_RW, IOMAP_E, IOMAP_RES, IOMAP_CS;
+
+void InitPin(struct IOMAP_Struct * IOMAP_temp, uint8_t pin)
+{
+  IOMAP_temp->pin  = pin;
+  uint8_t port = digitalPinToPort(pin);
+  if (port != NOT_A_PIN)
+  {
+    IOMAP_temp->reg  = portOutputRegister(port);
+    IOMAP_temp->mask = digitalPinToBitMask(pin);
+    // The following is equivalent to "pinMode(pin, OUTPUT)"
+    volatile uint8_t * mode = portModeRegister(port);
+    *mode |= IOMAP_temp->mask; // Output
+  }
+}
+
+void InitStructsAndPins()
+{
+  InitPin(&IOMAP_SCLK, PIN_SCLK);
+  InitPin(&IOMAP_SDIN, PIN_SDIN);
+  InitPin(&IOMAP_RS,   PIN_RS);
+  InitPin(&IOMAP_RW,   PIN_RW);
+  InitPin(&IOMAP_E,    PIN_E);
+  InitPin(&IOMAP_RES,  PIN_RES);
+  InitPin(&IOMAP_CS,   PIN_CS);
+}
+
+//--------------------------------------------------------------------------
+//##########################################################################
+//--------------------------------------------------------------------------
+void displaySend(uint8_t sendType, unsigned char v)
 {
   unsigned char i;
-  digitalWrite(CS, LOW);
-  digitalWrite(SDIN, LOW);
-  digitalWrite(SCLK, LOW);
-  digitalWrite(SCLK, HIGH);
-  for(i=0;i<8;i++)
-  {
-    digitalWrite(SCLK, LOW);
-    if((c&0x80)>>7==1)
+
+  digitalPinSetFast(&IOMAP_CS, LOW);
+
+  if (sendType == SEND_CMD)
+  { // Send a command value
+    if (SIG_MODE == MODE_4WIRE)
     {
-      digitalWrite(SDIN, HIGH);
+      digitalPinSetFast(&IOMAP_RS, LOW);
+    }
+    else if (SIG_MODE == MODE_3WIRE)
+    {
+      digitalPinSetFast(&IOMAP_SDIN, LOW);
+      digitalPinSetFast(&IOMAP_SCLK, LOW);
+      digitalPinSetFast(&IOMAP_SCLK, HIGH);
+    }
+  }
+  else if (sendType == SEND_DAT)
+  { // Send a data value
+    if (SIG_MODE == MODE_4WIRE)
+    {
+      digitalPinSetFast(&IOMAP_RS, HIGH);
+    }
+    else if (SIG_MODE == MODE_3WIRE)
+    {
+      digitalPinSetFast(&IOMAP_SDIN, HIGH);
+      digitalPinSetFast(&IOMAP_SCLK, LOW);
+      digitalPinSetFast(&IOMAP_SCLK, HIGH);
+    }
+  }
+
+  for(i=8;i>0;i--)
+  { // Decrementing is faster
+    digitalPinSetFast(&IOMAP_SCLK, LOW);
+    if((v&0x80)>>7==1)
+    {
+      digitalPinSetFast(&IOMAP_SDIN, HIGH);
     }
     else
     {
-      digitalWrite(SDIN, LOW);
+      digitalPinSetFast(&IOMAP_SDIN, LOW);
     }
-    c = c << 1;
-    digitalWrite(SCLK, HIGH);
+    v=v<<1;
+    digitalPinSetFast(&IOMAP_SCLK, HIGH);
   }
-  digitalWrite(CS, HIGH);
+
+  digitalPinSetFast(&IOMAP_CS, HIGH);
 }
 
-void data_out(unsigned char d)
-{
-  unsigned char i;
-  digitalWrite(CS, LOW);
-  digitalWrite(SDIN, HIGH);
-  digitalWrite(SCLK, LOW);
-  digitalWrite(SCLK, HIGH);
-  for(i=0;i<8;i++)
-  {
-    digitalWrite(SCLK, LOW);
-    if((d&0x80)>>7==1)
-    {
-      digitalWrite(SDIN, HIGH);
-    }
-    else
-    {
-      digitalWrite(SDIN, LOW);
-    }
-    d = d << 1;
-    digitalWrite(SCLK, HIGH);
-  }
-  digitalWrite(CS, HIGH);
-}
-
-void Checkerboard_25664()
-{
-        unsigned int i, j;
-	
-	Set_Column_Address_25664(0x00,0x77);
-	Set_Row_Address_25664(0x00,0x7F);
-	Set_Write_RAM_25664();
-
-	for(i=0;i<64;i++)
-	{
-		for(j=0;j<120;j++)
-		{
-			data_out(0xF0);
-			data_out(0xF0);
-		}
-		for(j=0;j<120;j++)
-		{
-			data_out(0x0F);
-			data_out(0x0F);
-		}
-	}
-}
 //--------------------------------------------------------------------------
-//--------------------------------------------------------------------------
-
 void Set_Column_Address_25664(unsigned char a, unsigned char b)
 {
-	comm_out(0x15);			// Set Column Address
-	data_out(a);				//   Default => 0x00
-	data_out(b);				//   Default => 0x77
+  displaySend(SEND_CMD, 0x15);     // Set Column Address
+  displaySend(SEND_DAT, a);        //   Default => 0x00
+  displaySend(SEND_DAT, b);        //   Default => 0x77
 }
-//--------------------------------------------------------------------------
-//--------------------------------------------------------------------------
 
+//--------------------------------------------------------------------------
 void Set_Row_Address_25664(unsigned char a, unsigned char b)
 {
-	comm_out(0x75);			// Set Row Address
-	data_out(a);				//   Default => 0x00
-	data_out(b);				//   Default => 0x7F
+  displaySend(SEND_CMD, 0x75);     // Set Row Address
+  displaySend(SEND_DAT, a);        //   Default => 0x00
+  displaySend(SEND_DAT, b);        //   Default => 0x7F
 }
-//--------------------------------------------------------------------------
-//--------------------------------------------------------------------------
 
+//--------------------------------------------------------------------------
 void Set_Write_RAM_25664()
 {
-	comm_out(0x5C);			// Enable MCU to Write into RAM
+  displaySend(SEND_CMD, 0x5C);     // Enable MCU to Write into RAM
 }
-//--------------------------------------------------------------------------
-//--------------------------------------------------------------------------
 
-void setup()
+//--------------------------------------------------------------------------
+void Reset_Device()
 {
-  DDRC = 0xFF;         //set PORTC of Arduino (control signals) as output
-  DDRA = 0xFF;         //set PORTA of Arduino (data signals) as output
-  PORTA = 0x03;        //set DB7-DB2 to LOW, and DB1-DB0 to HIGH
-  digitalWrite(RS, LOW);
-  digitalWrite(RW, LOW);
-  digitalWrite(E, LOW);
-  digitalWrite(RES, HIGH);
-  delay(1000);
+  // Lots of reset/tweaking commands follow
+  displaySend(SEND_CMD, 0xFD); // Set Command Lock (MCU protection status)
+  displaySend(SEND_DAT, 0x12); // = Reset
   
-  comm_out(0xFD);
-  data_out(0x12);
-  
-  comm_out(0xB3);
-  data_out(0xD0);
-  comm_out(0xCA);
-  data_out(0x3F);
-  comm_out(0xA2);
-  data_out(0x00);
-  comm_out(0xA1);
-  data_out(0x00);
-  comm_out(0xA0);
-  data_out(0x14);
-  data_out(0x11);
-  comm_out(0xB5);
-  data_out(0x00);
-  comm_out(0xAB);
-  data_out(0x01);
-  comm_out(0xB4);
-  data_out(0xA0);
-  data_out(0xB5);
-  comm_out(0xC1);
-  data_out(0x7F);
-  comm_out(0xC7);
-  data_out(0x0F);
-  comm_out(0xB9);
-  comm_out(0xB1);
-  data_out(0xE2);
-  comm_out(0xD1);
-  data_out(0xA2);
-  data_out(0x20);
-  comm_out(0xBB);
-  data_out(0x1F);
-  comm_out(0xB6);
-  data_out(0x08);
-  comm_out(0xBE);
-  data_out(0x07);
-  comm_out(0xA6);
-  comm_out(0xA9);
-  comm_out(0xAF);
+  displaySend(SEND_CMD, 0xB3); // Set Front Clock Divider / Oscillator Frequency
+  displaySend(SEND_DAT, 0xD0); // = reset / 1100b 
+
+  displaySend(SEND_CMD, 0xCA); // Set MUX Ratio
+  displaySend(SEND_DAT, 0x3F); // = 63d = 64MUX
+
+  displaySend(SEND_CMD, 0xA2); // Set Display Offset
+  displaySend(SEND_DAT, 0x00); // = RESET
+
+  displaySend(SEND_CMD, 0xA1); // Set Display Start Line
+  displaySend(SEND_DAT, 0x00); // = register 00h
+
+  displaySend(SEND_CMD, 0xA0); // Set Re-map and Dual COM Line mode
+  displaySend(SEND_DAT, 0x14); // = Reset except Enable Nibble Re-map, Scan from COM[N-1] to COM0, where N is the Multiplex ratio
+  displaySend(SEND_DAT, 0x11); // = Reset except Enable Dual COM mode (MUX = 63)
+
+  displaySend(SEND_CMD, 0xB5); // Set GPIO
+  displaySend(SEND_DAT, 0x00); // = GPIO0, GPIO1 = HiZ, Input Disabled
+
+  displaySend(SEND_CMD, 0xAB); // Function Selection
+  displaySend(SEND_DAT, 0x01); // = reset = Enable internal VDD regulator
+
+  displaySend(SEND_CMD, 0xB4); // Display Enhancement A
+  displaySend(SEND_DAT, 0xA0); // = Enable external VSL
+  displaySend(SEND_DAT, 0xB5); // = Normal (reset)
+
+  displaySend(SEND_CMD, 0xC1); // Set Contrast Current
+  displaySend(SEND_DAT, 0x7F); // = reset
+
+  displaySend(SEND_CMD, 0xC7); // Master Contrast Current Control
+  displaySend(SEND_DAT, 0x0F); // = no change
+
+  displaySend(SEND_CMD, 0xB9); // Select Default Linear Gray Scale table
+
+  displaySend(SEND_CMD, 0xB1); // Set Phase Length
+  displaySend(SEND_DAT, 0xE2); // = Phase 1 period (reset phase length) = 5 DCLKs, Phase 2 period (first pre-charge phase length) = 14 DCLKs
+
+  displaySend(SEND_CMD, 0xD1); // Display Enhancement B
+  displaySend(SEND_DAT, 0xA2); // = Normal (reset)
+  displaySend(SEND_DAT, 0x20); // n/a
+
+  displaySend(SEND_CMD, 0xBB); // Set Pre-charge voltage
+  displaySend(SEND_DAT, 0x1F); // = 0.60 x VCC
+
+  displaySend(SEND_CMD, 0xB6); // Set Second Precharge Period
+  displaySend(SEND_DAT, 0x08); // = 8 dclks [reset]
+
+  displaySend(SEND_CMD, 0xBE); // Set VCOMH
+  displaySend(SEND_DAT, 0x07); // = 0.86 x VCC
+
+  displaySend(SEND_CMD, 0xA6); // Set Display Mode = Normal Display
+
+  displaySend(SEND_CMD, 0xA9); // Exit Partial Display
+
+  displaySend(SEND_CMD, 0xAF); // Set Sleep mode OFF (Display ON)
+
   delay(10);
 }
 
+//--------------------------------------------------------------------------
+void ClearDisplay()
+{
+  unsigned int i, j;
+  
+  // Turn off display while clearing (also hides noise at powerup)
+  displaySend(SEND_CMD, 0xA4); // Set Display Mode = OFF
+
+  Set_Column_Address_25664(0x00,0x77);
+  Set_Row_Address_25664(0x00,0x7F);
+  Set_Write_RAM_25664();
+
+  for(i=0;i<MAXROWS;i++)
+  {
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0x00);
+      displaySend(SEND_DAT, 0x00);
+    }
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0x00);
+      displaySend(SEND_DAT, 0x00);
+    }
+  }
+
+  displaySend(SEND_CMD, 0xA6); // Set Display Mode = Normal Display
+}
+
+//--------------------------------------------------------------------------
+void FillDisplay()
+{
+  unsigned int i, j;
+  
+  Set_Column_Address_25664(0x00,0x77);
+  Set_Row_Address_25664(0x00,0x7F);
+  Set_Write_RAM_25664();
+
+  for(i=0;i<MAXROWS;i++)
+  {
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0xFF);
+      displaySend(SEND_DAT, 0xFF);
+    }
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0xFF);
+      displaySend(SEND_DAT, 0xFF);
+    }
+  }
+}
+
+//--------------------------------------------------------------------------
+void CheckerboardOdd()
+{
+  unsigned int i, j;
+  
+  Set_Column_Address_25664(0x00,0x77);
+  Set_Row_Address_25664(0x00,0x7F);
+  Set_Write_RAM_25664();
+
+  for(i=0;i<MAXROWS;i++)
+  {
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0x0F);
+      displaySend(SEND_DAT, 0x0F);
+    }
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0xF0);
+      displaySend(SEND_DAT, 0xF0);
+    }
+  }
+}
+
+//--------------------------------------------------------------------------
+void CheckerboardEven()
+{
+  unsigned int i, j;
+  
+  Set_Column_Address_25664(0x00,0x77);
+  Set_Row_Address_25664(0x00,0x7F);
+  Set_Write_RAM_25664();
+
+  for(i=0;i<MAXROWS;i++)
+  {
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0xF0);
+      displaySend(SEND_DAT, 0xF0);
+    }
+    for(j=0;j<MAXCOLS/2;j++)
+    {
+      displaySend(SEND_DAT, 0x0F);
+      displaySend(SEND_DAT, 0x0F);
+    }
+  }
+}
+
+//--------------------------------------------------------------------------
+//##########################################################################
+//--------------------------------------------------------------------------
+void setup()
+{
+  InitStructsAndPins();
+  digitalPinSetFast(&IOMAP_RS,  LOW);
+  digitalPinSetFast(&IOMAP_RW,  LOW);
+  digitalPinSetFast(&IOMAP_E,   LOW);
+  digitalPinSetFast(&IOMAP_RES, HIGH);
+  delay(1000);
+  Reset_Device();
+}
+
+//--------------------------------------------------------------------------
 void loop()
 { 
-  Checkerboard_25664();
-  delay(1000);
+    //displaySend(SEND_CMD, 0xA4); // Entire Display OFF, all pixels turns OFF in GS level 0
+    //displaySend(SEND_CMD, 0xA5); // Entire Display ON, all pixels turns ON in GS level 15
+    ClearDisplay();
+    CheckerboardOdd();
+    CheckerboardEven();
+    FillDisplay();
 }
+
+//--------------------------------------------------------------------------
+
