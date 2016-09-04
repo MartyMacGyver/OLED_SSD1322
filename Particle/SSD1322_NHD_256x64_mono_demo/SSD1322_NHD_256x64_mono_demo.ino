@@ -20,11 +20,11 @@ Annotated and updated by Martin Falatic
 //##########################################################################
 //--------------------------------------------------------------------------
 
-#include <SPI.h>
+//#include <SPI.h> // Arduino
 
-#define MODE_3WIRE    1   // BS1=0, BS0 = 1
-#define MODE_4WIRE    2   // BS1=0, BS0 = 0, needs the RS (D/C) signal
-#define MODE_SPI4W    3   // BS1=0, BS0 = 0, needs the RS (D/C) signal
+#define MODE_3WIRE    1   // n/a for this device!
+#define MODE_4WIRE    2   // BS1=0, BS0 = 0, needs the RS (D/C) signal; SLOOOOOOW...
+#define MODE_SPI4W    3   // BS1=0, BS0 = 0, needs the RS (D/C) signal; FAST HW SPI!
 
 #define SEND_CMD      1   // 3- and 4-wire - Display instruction (command)
 #define SEND_DAT      2   // 3- and 4-wire - Display instruction (data)
@@ -33,61 +33,44 @@ Annotated and updated by Martin Falatic
 #define MAXCOLS     240   // Still figuring these out...
 
 // Pin mappings for Mega2560
-#define PIN_SCLK  30  // SCLK signal (SPI uses SCK  on pin 52)
-#define PIN_SDIN  31  // SDIN signal (SPI uses MOSI on pin 51)
-#define PIN_RS    32  // RS (D/C) signal (can be tied low for 3-wire SPI)
-#define PIN_CS    33  // /CS signal (certain SPI can use pin 53)
-                      // (can be tied low with a single display)
-#define PIN_RES   34  // /RES signal
-#define PIN_RW    35  // /WR (R/W) signal (can be tied low)
-#define PIN_E     36  // /RD (E) signal (can be tied low)
+#define PIN_SDIN     A5  // SDIN signal
+#define PIN_RES      A4  // /RES signal
+#define PIN_SCLK     A3  // SCLK signal
+#define PIN_RS       A2  // RS (D/C) signal (can be tied low for 3-wire SPI)
+#define PIN_CS       A0  // /CS signal (can be tied low with a single display)
 
-int SIG_MODE = MODE_4WIRE;
-//int SIG_MODE = MODE_3WIRE;
-//int SIG_MODE = MODE_SPI4W;
+//int SIG_MODE = MODE_4WIRE;
+int SIG_MODE = MODE_SPI4W;
 
 //--------------------------------------------------------------------------
 //##########################################################################
 //--------------------------------------------------------------------------
 
-// This is slow. Really slow. (At 16 MHz anyway)
-//#define digitalPinSetVal(IOPTR, VAL) ( digitalWrite((IOPTR)->pin, VAL) )
-
-// Much more efficient!
-#define digitalPinSetVal(IOPTR, VAL) ( (VAL == LOW) ? \
-                                        (*(IOPTR)->reg &= ~(IOPTR)->mask) : \
-                                        (*(IOPTR)->reg |=  (IOPTR)->mask) )
-
-struct IOMAP_Struct
-{
-  uint8_t pin;
-  volatile uint8_t * reg;
-  uint8_t mask;
-} IOMAP_SCLK, IOMAP_SDIN, IOMAP_RS, IOMAP_RW, IOMAP_E, IOMAP_RES, IOMAP_CS;
-
-void InitPin(struct IOMAP_Struct * IOMAP_temp, uint8_t pin)
-{
-  IOMAP_temp->pin  = pin;
-  uint8_t port = digitalPinToPort(pin);
-  if (port != NOT_A_PIN)
-  {
-    IOMAP_temp->reg  = portOutputRegister(port);
-    IOMAP_temp->mask = digitalPinToBitMask(pin);
-    // The following is equivalent to "pinMode(pin, OUTPUT)"
-    volatile uint8_t * mode = portModeRegister(port);
-    *mode |= IOMAP_temp->mask; // Output
-  }
-}
-
 void InitStructsAndPins()
 {
-  InitPin(&IOMAP_SCLK, PIN_SCLK);
-  InitPin(&IOMAP_SDIN, PIN_SDIN);
-  InitPin(&IOMAP_RS,   PIN_RS);
-  InitPin(&IOMAP_RW,   PIN_RW);
-  InitPin(&IOMAP_E,    PIN_E);
-  InitPin(&IOMAP_RES,  PIN_RES);
-  InitPin(&IOMAP_CS,   PIN_CS);
+  pinMode(A0, OUTPUT); digitalWrite(A0,  LOW);
+  pinMode(A1, OUTPUT); digitalWrite(A1,  LOW);
+  pinMode(A2, OUTPUT); digitalWrite(A2,  LOW);
+  pinMode(A3, OUTPUT); digitalWrite(A3,  LOW);
+  pinMode(A4, OUTPUT); digitalWrite(A4,  LOW);
+  pinMode(A5, OUTPUT); digitalWrite(A5,  LOW);
+  pinMode(A6, OUTPUT); digitalWrite(A6,  LOW);
+  pinMode(A7, OUTPUT); digitalWrite(A7,  LOW);
+
+  pinMode(D0, OUTPUT); digitalWrite(D0,  LOW);
+  pinMode(D1, OUTPUT); digitalWrite(D1,  LOW);
+  pinMode(D2, OUTPUT); digitalWrite(D2,  LOW);
+  pinMode(D3, OUTPUT); digitalWrite(D3,  LOW);
+  pinMode(D4, OUTPUT); digitalWrite(D4,  LOW);
+  pinMode(D5, OUTPUT); digitalWrite(D5,  LOW);
+  pinMode(D6, OUTPUT); digitalWrite(D6,  LOW);
+  pinMode(D7, OUTPUT); digitalWrite(D7,  LOW);
+
+  pinMode(PIN_SCLK, OUTPUT);
+  pinMode(PIN_SDIN, OUTPUT);
+  pinMode(PIN_RS, OUTPUT);
+  pinMode(PIN_RES, OUTPUT);
+  pinMode(PIN_CS, OUTPUT);
 }
 
 //--------------------------------------------------------------------------
@@ -97,32 +80,32 @@ void displaySend(uint8_t sendType, unsigned char v)
 {
   unsigned char i;
 
-  digitalPinSetVal(&IOMAP_CS, LOW);
+  digitalWrite(PIN_CS, LOW);
 
   if (sendType == SEND_CMD)
   { // Send a command value
     if (SIG_MODE == MODE_4WIRE || SIG_MODE == MODE_SPI4W)
     {
-      digitalPinSetVal(&IOMAP_RS, LOW);
+      digitalWrite(PIN_RS, LOW);
     }
     else if (SIG_MODE == MODE_3WIRE)
     {
-      digitalPinSetVal(&IOMAP_SDIN, LOW);
-      digitalPinSetVal(&IOMAP_SCLK, LOW);
-      digitalPinSetVal(&IOMAP_SCLK, HIGH);
+      digitalWrite(PIN_SDIN, LOW);
+      digitalWrite(PIN_SCLK, LOW);
+      digitalWrite(PIN_SCLK, HIGH);
     }
   }
   else if (sendType == SEND_DAT)
   { // Send a data value
     if (SIG_MODE == MODE_4WIRE || SIG_MODE == MODE_SPI4W)
     {
-      digitalPinSetVal(&IOMAP_RS, HIGH);
+      digitalWrite(PIN_RS, HIGH);
     }
     else if (SIG_MODE == MODE_3WIRE)
     {
-      digitalPinSetVal(&IOMAP_SDIN, HIGH);
-      digitalPinSetVal(&IOMAP_SCLK, LOW);
-      digitalPinSetVal(&IOMAP_SCLK, HIGH);
+      digitalWrite(PIN_SDIN, HIGH);
+      digitalWrite(PIN_SCLK, LOW);
+      digitalWrite(PIN_SCLK, HIGH);
     }
   }
 
@@ -130,24 +113,24 @@ void displaySend(uint8_t sendType, unsigned char v)
   {
     for(i=8;i>0;i--)
     { // Decrementing is faster
-      digitalPinSetVal(&IOMAP_SCLK, LOW);
+      digitalWrite(PIN_SCLK, LOW);
       if((v&0x80)>>7==1)
       {
-        digitalPinSetVal(&IOMAP_SDIN, HIGH);
+        digitalWrite(PIN_SDIN, HIGH);
       }
       else
       {
-        digitalPinSetVal(&IOMAP_SDIN, LOW);
+        digitalWrite(PIN_SDIN, LOW);
       }
       v=v<<1;
-      digitalPinSetVal(&IOMAP_SCLK, HIGH);
+      digitalWrite(PIN_SCLK, HIGH);
     }
   }
   else if (SIG_MODE == MODE_SPI4W) {
     SPI.transfer(v);
   }
 
-  digitalPinSetVal(&IOMAP_CS, HIGH);
+  digitalWrite(PIN_CS, HIGH);
 }
 
 //--------------------------------------------------------------------------
@@ -345,15 +328,14 @@ void CheckerboardEven()
 void setup()
 {
   InitStructsAndPins();
-  digitalPinSetVal(&IOMAP_RS,  LOW);
-  digitalPinSetVal(&IOMAP_RW,  LOW);
-  digitalPinSetVal(&IOMAP_E,   LOW);
-  digitalPinSetVal(&IOMAP_RES, HIGH);
+  digitalWrite(PIN_RS,  LOW);
+  digitalWrite(PIN_RES, HIGH);
   delay(1000);
+
   if (SIG_MODE == MODE_SPI4W) {
     SPI.begin();
     SPI.setBitOrder(MSBFIRST);
-    SPI.setClockDivider(SPI_CLOCK_DIV2);
+    SPI.setClockDivider(SPI_CLOCK_DIV4);
     // DIV4 is almost as fast (for a 16 MHz device)
   }
   Reset_Device();
